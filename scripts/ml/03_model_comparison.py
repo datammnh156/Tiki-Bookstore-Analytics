@@ -64,7 +64,7 @@ print("✅ Đã scale features")
 # ============================================================================
 
 print("\n" + "="*80)
-print("1️⃣ LOGISTIC REGRESSION (ĐÃ TRAIN)")
+print("1️⃣ LOGISTIC REGRESSION ")
 print("="*80)
 
 # Load Logistic Regression từ train_model_logistic.py
@@ -98,7 +98,7 @@ print(f"   - Train-Test Gap: {lr_gap:.3f}")
 # ============================================================================
 
 print("\n" + "="*80)
-print("2️⃣ RANDOM FOREST (ĐÃ TRAIN)")
+print("2️⃣ RANDOM FOREST ")
 print("="*80)
 
 with open('models/bestseller_model.pkl', 'rb') as f:
@@ -149,65 +149,25 @@ comparison_df = pd.DataFrame({
 for col in comparison_df.columns[1:]:
     comparison_df[col] = comparison_df[col].apply(lambda x: f"{x:.3f}")
 
-print(comparison_df.to_string(index=False))
+# In bảng với format đẹp
+print(f"{'Model':<25} {'Accuracy':<12} {'Precision':<12} {'Recall':<12} {'F1-Score':<12} {'Gap':<12}")
+print("-" * 85)
+
+for idx, row in comparison_df.iterrows():
+    model_name = row['Model']
+    acc = row['Accuracy']
+    prec = row['Precision (Bestseller)']
+    recall = row['Recall (Bestseller)']
+    f1 = row['F1-Score (Bestseller)']
+    gap = row['Train-Test Gap']
+    
+    print(f"{model_name:<25} {acc:<12} {prec:<12} {recall:<12} {f1:<12} {gap:<12}")
+
 print()
 
-# ============================================================================
-# 5. PHÂN TÍCH VÀ GIẢI THÍCH
-# ============================================================================
-
-print("\n" + "="*80)
-print("💡 PHÂN TÍCH VÀ GIẢI THÍCH")
-print("="*80 + "\n")
-
-# Xác định model tốt hơn
-winner = "Random Forest" if rf_test_acc > lr_test_acc else "Logistic Regression"
-acc_diff = abs(rf_test_acc - lr_test_acc)
-prec_diff = abs(rf_precision - lr_precision)
-recall_diff = abs(rf_recall - lr_recall)
-f1_diff = abs(rf_f1 - lr_f1)
-
-explanation = f"""
-**KẾT LUẬN:**
-
-Random Forest vượt trội hơn Logistic Regression trên tất cả các chỉ số quan trọng. 
-Cụ thể, Random Forest đạt accuracy {rf_test_acc:.1%} (cao hơn {acc_diff:.1%}), 
-precision {rf_precision:.1%} (cao hơn {prec_diff:.1%}), và đặc biệt là recall 
-{rf_recall:.1%} (cao hơn {recall_diff:.1%}), cho thấy khả năng phát hiện bestseller 
-tốt hơn đáng kể.
-
-**TẠI SAO RANDOM FOREST TỐT HƠN?**
-
-1. **Bản chất dữ liệu phi tuyến:** Từ phân tích EDA, ta thấy quantity_sold (cơ sở 
-   xác định bestseller) có phân bố lệch mạnh, với nhiều outliers và mối quan hệ 
-   phi tuyến với các features như price và discount_rate. Random Forest, với khả 
-   năng học các mẫu phi tuyến phức tạp qua nhiều decision trees, phù hợp hơn với 
-   đặc điểm này so với Logistic Regression (chỉ học quan hệ tuyến tính).
-
-2. **Xử lý tương tác features tự động:** Random Forest tự động capture được các 
-   tương tác giữa features (VD: sách giá thấp + discount cao → bestseller), trong 
-   khi Logistic Regression cần feature engineering thủ công để làm điều này.
-
-3. **Không cần giả định phân phối:** Logistic Regression giả định features tuân 
-   theo phân phối nhất định, nhưng dữ liệu thực tế (đặc biệt price và rating_average) 
-   không hoàn toàn đáp ứng. Random Forest không có giả định này nên linh hoạt hơn.
-
-4. **Overfitting được kiểm soát:** Train-Test Gap của Random Forest ({rf_gap:.1%}) 
-   thấp hơn Logistic Regression ({lr_gap:.1%}), chứng tỏ Random Forest không bị 
-   overfit mặc dù phức tạp hơn, nhờ cơ chế ensemble và các tham số regularization 
-   (max_depth, min_samples_split).
-
-**KHUYẾN NGHỊ:**
-
-Sử dụng Random Forest làm mô hình chính cho hệ thống dự đoán bestseller, vì nó 
-không chỉ cho accuracy cao hơn mà còn cân bằng tốt giữa precision và recall, 
-phù hợp với bài toán thực tế cần phát hiện càng nhiều bestseller càng tốt.
-"""
-
-print(explanation)
 
 # ============================================================================
-# 6. VẼ BIỂU ĐỒ SO SÁNH
+# 5. VẼ BIỂU ĐỒ SO SÁNH
 # ============================================================================
 
 print("\n" + "="*80)
@@ -249,12 +209,19 @@ plt.savefig('outputs/charts/model_comparison.png', dpi=300, bbox_inches='tight')
 print("✅ Đã lưu biểu đồ: outputs/charts/model_comparison.png")
 
 # ============================================================================
-# 7. LƯU BÁO CÁO
+# 6. LƯU BÁO CÁO
 # ============================================================================
 
 print("\n" + "="*80)
 print("💾 ĐANG LƯU BÁO CÁO...")
 print("="*80)
+
+# Tính toán các hiệu số
+acc_diff = rf_test_acc - lr_test_acc
+prec_diff = rf_precision - lr_precision
+recall_diff = rf_recall - lr_recall
+f1_diff = rf_f1 - lr_f1
+
 
 report = f"""# So Sánh Mô Hình: Logistic Regression vs Random Forest
 
@@ -281,7 +248,7 @@ report = f"""# So Sánh Mô Hình: Logistic Regression vs Random Forest
 
 Random Forest có gap thấp hơn, chứng tỏ generalization tốt hơn.
 
-{explanation}
+## Phân Tích Chi Tiết Hơn
 
 ## Biểu Đồ So Sánh
 
@@ -303,4 +270,3 @@ print("="*80)
 print(f"\n📁 Files đã tạo:")
 print(f"   1. outputs/charts/model_comparison.png - Biểu đồ so sánh")
 print(f"   2. outputs/reports/model_comparison.md - Báo cáo chi tiết")
-print(f"\n💡 Bạn có thể copy nội dung từ file .md trực tiếp vào thesis!\n")

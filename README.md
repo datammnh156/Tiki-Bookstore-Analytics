@@ -1,6 +1,7 @@
-# 📚 Dự Án Phân Tích Sách Tiki
+# 📚 Đồ án phân tích dữ liệu và dự đoán sách bestseller trên nền tảng Tiki.vn sử dụng Machine Learning và Power BI.
+Đồ Án Ngành Hệ Thống Thông Tin Quản Lý
+---
 
-Đồ án phân tích dữ liệu và dự đoán sách bestseller trên nền tảng Tiki.vn sử dụng Machine Learning và Power BI.
 
 ---
 
@@ -49,6 +50,7 @@ Dự án này phân tích **3,830 sách** từ Tiki.vn với các mục tiêu:
 ### 4. Discount Optimization
 - ✅ Optimize discount strategy per book
 - ✅ Batch optimization for all books
+- ⚠️ Mô phỏng dựa trên correlational analysis (xem phần Limitations)
 
 ### 5. Power BI Dashboard
 - ✅ Descriptive analysis
@@ -89,6 +91,7 @@ DoAnNganh/
 │       ├── 04_random_forest_evaluation.py # Evaluate RF
 │       ├── 05_optimize_discount_single.py # Single book optimization
 │       ├── 06_optimize_discount_all.py    # Batch optimization
+│       ├── shap_analysis.py               # Shap analysis values
 │       ├── export_shap_for_powerbi.py     # Export SHAP values
 │       └── recommendation.py              # Recommendation system
 │
@@ -108,8 +111,8 @@ DoAnNganh/
 ### Bước 1: Clone Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/tiki-books-analysis.git
-cd tiki-books-analysis
+git clone https://github.com/datammnh156/Do-An-Nganh-HTTTQL.git
+cd Do-An-Nganh-HTTTQL
 ```
 
 ### Bước 2: Cài Đặt Dependencies
@@ -180,8 +183,8 @@ DoAnNganhPBI.pbix
 
 | Model | Accuracy | Precision | Recall | F1-Score |
 |-------|----------|-----------|--------|----------|
-| **Random Forest** | 87.3% | 0.85 | 0.89 | 0.87 |
-| Logistic Regression | 82.1% | 0.80 | 0.84 | 0.82 |
+| **Random Forest** | 84.5% | 0.796 | 0.655 | 0.719 |
+| Logistic Regression | 78.7% | 0.699 | 0.522 | 0.598 |
 
 ### Top Features (SHAP Analysis)
 
@@ -216,6 +219,41 @@ DoAnNganhPBI.pbix
 ### Web Scraping
 - **requests** - HTTP requests
 - **BeautifulSoup** - HTML parsing
+
+---
+
+## ⚠️ Hạn Chế Và Phương Pháp Luận
+
+### Discount Optimization - Tương Quan vs Nhân Quả
+
+Scripts `05_optimize_discount_single.py` và `06_optimize_discount_all.py` mô phỏng tác động của discount_rate lên xác suất bestseller bằng cách:
+1. Giữ nguyên các features khác (price, rating, category)
+2. Quét discount_rate từ 0% đến 50%
+3. Dùng `model.predict_proba()` để tính xác suất
+
+⚠️ **Đây là SUY LUẬN TƯƠNG QUAN (correlational), KHÔNG PHẢI NHÂN QUẢ (causal):**
+
+**Vấn đề:**
+- Model được train trên dữ liệu quan sát, không phải dữ liệu thực nghiệm (A/B test)
+- Kết quả chỉ cho biết: "Sách có discount X% thường có xác suất bestseller Y% theo dữ liệu lịch sử"
+- **KHÔNG đảm bảo** rằng tăng discount sẽ khiến sách trở thành bestseller trong thực tế
+- Có thể tồn tại confounding factors:
+  - **Reverse causation:** Sách bestseller vốn được giảm giá nhiều hơn (vì bán chạy → nhà bán hạ giá để promote)
+  - **Omitted variables:** Yếu tố ẩn (brand nổi tiếng, marketing campaign, tác giả nổi tiếng) ảnh hưởng cả discount và bestseller
+
+**Hạn chế phương pháp:**
+- Model giả định "ceteris paribus" (các yếu tố khác không đổi) - không thực tế
+- Kết quả CHỈ mang tính tham khảo, không nên dùng trực tiếp cho quyết định kinh doanh
+
+**Khuyến nghị:**
+- ✅ Dùng kết quả để khám phá pattern và đưa ra giả thuyết
+- ✅ Kiểm chứng bằng thực nghiệm (A/B test) trước khi triển khai
+- ✅ Kết hợp với domain knowledge (kinh tế, marketing)
+- ✅ Nếu cần kết quả chính xác hơn, sử dụng phương pháp causal inference:
+  - Propensity score matching
+  - Uplift modeling
+  - Instrumental variables
+  - Regression discontinuity design
 
 ---
 
@@ -262,10 +300,10 @@ Dashboard bao gồm 4 trang chính:
 
 ## 📧 Tác Giả
 
-**[Tên của bạn]**
-- Email: [email@example.com]
+**[Lý Danh Tâm]**
+- Email: [datammnh1506@gmail.com]
 - GitHub: [@datammnh156](https://github.com/datammnh156)
-- LinkedIn: [Your Name](https://linkedin.com/in/yourname)
+- LinkedIn: [Danh Tâm](https://www.linkedin.com/in/datammnh156/)
 
 ---
 
@@ -283,5 +321,3 @@ This project is for educational purposes only.
 - Power BI - Visualization platform
 
 ---
-
-**⭐ Nếu project này hữu ích, hãy cho một star nhé!**

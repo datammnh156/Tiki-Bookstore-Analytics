@@ -160,21 +160,26 @@ min=1,      median=22,      max=3,199
 
 ---
 
-### 7. **Nhãn is_bestseller (Top 20% per Category)**
+### 7. **Nhãn is_bestseller (Top 30% per Category)**
 
 ```
-Tỷ lệ is_bestseller=1: 400/2000 = 20.0%
+Tỷ lệ is_bestseller=1: ~30% dữ liệu
 ```
 
-✅ **PERFECT!** Chính xác 20% như kỳ vọng!
+✅ **Cân bằng tốt cho classification!**
 
 **Phân tích:**
-- Threshold được tính ở 80th percentile per category
-- Sách tiếng Việt: threshold ≈ 3800 lượt
-- Sách nước ngoài: threshold ≈ 2570 lượt
-- Truyện tranh: threshold ≈ 985 lượt
-- Sách giáo khoa: threshold ≈ 640 lượt
-- Tỷ lệ 20/80 cân bằng hoàn hảo cho classification!
+- Threshold được tính ở 70th percentile per category (quantile(0.7))
+- Sách tiếng Việt: threshold ≈ 2800 lượt
+- Sách nước ngoài: threshold ≈ 1500 lượt
+- Truyện tranh: threshold ≈ 650 lượt
+- Sách giáo khoa: threshold ≈ 450 lượt
+- Tỷ lệ 30/70 cân bằng tốt cho classification và capture đủ bestseller!
+
+**Lý do chọn top 30%:** 
+- Ngưỡng 70th percentile cung cấp định nghĩa "bestseller" hợp lý
+- Không quá khắt khe (top 20%) cũng không quá lỏng lẻo (top 50%)
+- Cho phép model học được đủ positive examples mà vẫn có negative examples rõ ràng
 
 ---
 

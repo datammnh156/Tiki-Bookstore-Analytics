@@ -1,3 +1,32 @@
+"""
+CẢNH BÁO VỀ PHƯƠNG PHÁP LUẬN - HẠN CHẾ QUAN TRỌNG:
+
+Script này mô phỏng tác động của discount_rate lên xác suất bestseller bằng cách:
+1. Giữ nguyên tất cả features khác (price, rating, category, etc.)
+2. Quét discount_rate từ 0% đến 75%
+3. Dùng model.predict_proba() để tính xác suất bestseller
+
+⚠️ ĐÂY LÀ SUY LUẬN TƯƠNG QUAN (CORRELATIONAL), KHÔNG PHẢI NHÂN QUẢ (CAUSAL):
+
+- Model được train trên dữ liệu quan sát (observational data), không phải dữ liệu thực nghiệm
+- Khi ta thay đổi discount_rate trong mô phỏng, model chỉ cho biết "sách có discount X% 
+  thường có xác suất bestseller là Y%" dựa trên pattern đã học
+- KHÔNG đảm bảo rằng "nếu ta tăng discount lên X% thì sách SẼ trở thành bestseller"
+- Có thể tồn tại confounding factors: VD sách bestseller vốn được giảm giá nhiều hơn 
+  (reverse causation), hoặc có yếu tố ẩn khác (brand, marketing campaign) chưa có trong data
+
+HẠN CHẾ:
+- Kết quả CHỈ mang tính tham khảo, không nên dùng trực tiếp cho quyết định kinh doanh
+- Cần kiểm chứng bằng A/B test thực tế hoặc phương pháp causal inference 
+  (propensity score matching, uplift modeling, instrumental variables)
+- Model giả định "ceteris paribus" (các yếu tố khác không đổi) - không thực tế trong thực tiễn
+
+KHUYẾN NGHỊ:
+- Dùng kết quả để khám phá pattern và đưa ra giả thuyết
+- Kiểm chứng bằng thực nghiệm trước khi triển khai thực tế
+- Kết hợp với domain knowledge và business context
+"""
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,6 +39,9 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 def simulate_optimal_discount(product_id, df, model, scaler, feature_cols):
     """
     Mô phỏng % giảm giá tối ưu cho 1 sản phẩm
+    
+    LƯU Ý: Đây là mô phỏng dựa trên model dự đoán (correlational), không phải 
+    phân tích nhân quả (causal). Xem docstring ở đầu file để hiểu hạn chế.
     
     Parameters:
     -----------

@@ -1,6 +1,7 @@
 """
-He thong recommendation content-based dung cosine similarity.
+He thong recommendation content-based dung euclidean distance-based similarity.
 Goi y 5 sach tuong tu nhat (cung category) cho moi sach.
+Tinh similarity = 1 / (1 + euclidean_distance) để chuyển distance thành similarity score.
 """
 
 import pandas as pd
