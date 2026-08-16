@@ -22,7 +22,7 @@ print("📊 SO SÁNH MÔ HÌNH: LOGISTIC REGRESSION vs RANDOM FOREST")
 print("="*80)
 
 # ============================================================================
-# 1. LOAD VÀ CHUẨN BỊ DỮ LIỆU (GIỐNG NHAU CHO CẢ 2 MODEL)
+# 1. LOAD VÀ CHUẨN BỊ DỮ LIỆU 
 # ============================================================================
 
 print("\n🔧 Đang tải và chuẩn bị dữ liệu...")
@@ -133,7 +133,7 @@ print(f"   - Train-Test Gap: {rf_gap:.3f}")
 # ============================================================================
 
 print("\n" + "="*80)
-print("📊 BẢNG SO SÁNH CUỐI CÙNG")
+print("📊 BẢNG SO SÁNH Logistic Regression và Random Forest đã Train")
 print("="*80 + "\n")
 
 comparison_df = pd.DataFrame({
@@ -267,6 +267,4 @@ print("✅ Đã lưu báo cáo: outputs/reports/model_comparison.md")
 print("\n" + "="*80)
 print("✅ HOÀN THÀNH!")
 print("="*80)
-print(f"\n📁 Files đã tạo:")
-print(f"   1. outputs/charts/model_comparison.png - Biểu đồ so sánh")
-print(f"   2. outputs/reports/model_comparison.md - Báo cáo chi tiết")
+

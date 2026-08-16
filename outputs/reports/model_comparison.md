@@ -31,4 +31,4 @@ Random Forest có gap thấp hơn, chứng tỏ generalization tốt hơn.
 
 ---
 
-*Báo cáo được tạo tự động vào 2026-08-11 19:49:46*
+*Báo cáo được tạo tự động vào 2026-08-15 15:43:01*

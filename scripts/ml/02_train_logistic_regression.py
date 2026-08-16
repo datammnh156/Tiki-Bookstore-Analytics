@@ -1,6 +1,6 @@
 """
-Train model Logistic Regression de du doan bestseller.
-Dung cung config voi Random Forest de co the so sanh cong bang.
+Train model Logistic Regression để dự đoán bestseller.
+Dùng cùng config với Random Forest để so sánh công bằng.
 """
 
 import pandas as pd
@@ -23,8 +23,7 @@ def train_logistic_model(data_path='data/clean/tiki_books_cleaned.csv',
                          model_path='models/logistic_model.pkl',
                          scaler_path='models/logistic_scaler.pkl'):
     """
-    Train model Logistic Regression de du doan mot cuon sach co phai bestseller khong.
-    
+    Train model Logistic Regression de du doan mot cuon sach co phai bestseller khong. 
     Tham so:
         data_path: duong dan den file du lieu da lam sach
         model_path: noi luu model sau khi train

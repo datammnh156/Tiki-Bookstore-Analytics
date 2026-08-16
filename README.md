@@ -38,9 +38,9 @@ Dự án này phân tích **3,830 sách** từ Tiki.vn với các mục tiêu:
 - ✅ GridSearch hyperparameter tuning
 
 ### 2. Content-Based Recommendation
-- ✅ Euclidean distance-based similarity
-- ✅ Top 5 recommendations per book
-- ✅ Category-filtered recommendations
+- ✅ Euclidean distance similarity on price and rating
+- ✅ Top 5 recommendations per book within same category
+- ✅ Category-filtered to ensure relevant suggestions
 
 ### 3. SHAP Explainability
 - ✅ Feature importance analysis
@@ -111,8 +111,8 @@ DoAnNganh/
 ### Bước 1: Clone Repository
 
 ```bash
-git clone https://github.com/datammnh156/Do-An-Nganh-HTTTQL.git
-cd Do-An-Nganh-HTTTQL
+git clone https://github.com/datammnh156/Tiki-Bookstore-Analysis.git
+cd Tiki-Bookstore-Analysis
 ```
 
 ### Bước 2: Cài Đặt Dependencies
