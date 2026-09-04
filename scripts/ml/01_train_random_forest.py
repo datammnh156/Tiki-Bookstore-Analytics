@@ -125,7 +125,7 @@ def train_bestseller_model(data_path='data/clean/tiki_books_cleaned.csv',
         pickle.dump(model, f)
     print("Da luu model: {}".format(model_path))
     
-    # Lưu scaler (phải có khi dự đoán sau này)
+    # Lưu scaler 
     with open(scaler_path, 'wb') as f:
         pickle.dump(scaler, f)
     print("Da luu scaler: {}".format(scaler_path))
@@ -148,6 +148,5 @@ if __name__ == "__main__":
     result = train_bestseller_model()
     
     print("\nModel da duoc train va luu thanh cong.")
-    print("Su dung trong cac script khac bang cach:")
     print("  model = pickle.load(open('models/bestseller_model.pkl', 'rb'))")
     print("  scaler = pickle.load(open('models/scaler.pkl', 'rb'))")

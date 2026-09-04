@@ -1,394 +1,459 @@
 """
-Đánh giá tổng thể model bestseller prediction
-Kiểm tra: Cross-validation, Overfitting, Calibration, Stability, Baseline 
-của Random Forest model đã train
+Đánh giá tổng thể mô hình Random Forest dự đoán sách bán chạy.
 
+Bao gồm:
+1. Cross-Validation 5-Fold
+2. Kiểm tra chênh lệch Train/Test
+3. Calibration
+4. Stability qua nhiều random seed
+5. So sánh với baseline
+6. Confusion Matrix + Classification Report
+7. Feature Importance
+
+Lưu ý:
+- Không hardcode kết quả thực nghiệm.
+- Các kết quả đều được tính trực tiếp từ dữ liệu và mô hình.
 """
 
-import pandas as pd
-import numpy as np
-import pickle
+import os
 import sys
 import io
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import cross_val_score, train_test_split, StratifiedKFold
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from sklearn.calibration import calibration_curve
+import pickle
+
+import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
-# Fix encoding
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.calibration import calibration_curve
+from sklearn.dummy import DummyClassifier
 
-print("\n" + "="*70)
-print("📊 ĐÁNH GIÁ TỔNG THỂ MODEL BESTSELLER PREDICTION")
-print("="*70)
 
-# ============================================================================
-# LOAD DATA
-# ============================================================================
+# ============================================================
+# CẤU HÌNH
+# ============================================================
+DATA_PATH = "data/clean/tiki_books_cleaned.csv"
+MODEL_PATH = "models/bestseller_model.pkl"
+SCALER_PATH = "models/scaler.pkl"
+OUTPUT_DIR = "outputs/charts"
 
-print("\n🔧 Đang tải dữ liệu...")
-df = pd.read_csv('data/clean/tiki_books_cleaned.csv', encoding='utf-8')
-print(f"✅ Đã load data: {len(df):,} sách")
+TEST_SIZE = 0.20
+RANDOM_STATE = 42
+N_SPLITS = 5
+STABILITY_SEEDS = [0, 1, 42, 100, 123]
 
-# Create one-hot encoding
-category_dummies = pd.get_dummies(df['category_name'], prefix='cat')
-df = pd.concat([df, category_dummies], axis=1)
+NUMERIC_FEATURES = [
+    "price",
+    "discount_rate",
+    "rating_average",
+    "has_rating",
+]
 
-# Define features
-feature_cols = ['price', 'discount_rate', 'rating_average', 'has_rating']
-cat_cols = [col for col in df.columns if col.startswith('cat_')]
-feature_cols.extend(cat_cols)
-
-X = df[feature_cols]
-y = df['is_bestseller']
-
-print(f"✅ Số features: {len(feature_cols)}")
-print(f"✅ Tỷ lệ bestseller: {y.mean():.1%} ({y.sum():,}/{len(y):,})")
-
-# ============================================================================
-# 1. CROSS-VALIDATION (K-FOLD)
-# ============================================================================
-
-print("\n" + "="*70)
-print("1️⃣ CROSS-VALIDATION (5-FOLD)")
-print("="*70)
-
-# Chuẩn bị model và scaler
-model_params = {
-    'n_estimators': 100,
-    'max_depth': 10,
-    'min_samples_split': 10,
-    'random_state': 42,
-    'class_weight': 'balanced'
+MODEL_PARAMS = {
+    "n_estimators": 100,
+    "max_depth": 10,
+    "min_samples_split": 10,
+    "random_state": RANDOM_STATE,
 }
 
-# K-fold CV
-cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-cv_scores = []
 
-for fold, (train_idx, test_idx) in enumerate(cv.split(X, y), 1):
-    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-    y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-    
-    # Scale
+# ============================================================
+# HỖ TRỢ HIỂN THỊ UTF-8 TRÊN WINDOWS
+# ============================================================
+if hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
+
+def print_section(title):
+    print("\n" + "=" * 78)
+    print(title)
+    print("=" * 78)
+
+
+def prepare_data(df):
+    """Tạo One-Hot Encoding cho category và trả về X, y, feature_cols."""
+    category_dummies = pd.get_dummies(
+        df["category_name"],
+        prefix="cat",
+        dtype=int,
+    )
+
+    df_encoded = pd.concat([df.copy(), category_dummies], axis=1)
+
+    category_features = [
+        col for col in df_encoded.columns
+        if col.startswith("cat_")
+    ]
+
+    feature_cols = NUMERIC_FEATURES + category_features
+    X = df_encoded[feature_cols].copy()
+    y = df_encoded["is_bestseller"].astype(int).copy()
+
+    return X, y, feature_cols
+
+
+def cross_validation_evaluation(X, y):
+    """
+    Stratified 5-Fold Cross-Validation.
+    Scaler chỉ được fit trên từng training fold để tránh data leakage.
+    """
+    print_section("1. CROSS-VALIDATION (5-FOLD)")
+
+    cv = StratifiedKFold(
+        n_splits=N_SPLITS,
+        shuffle=True,
+        random_state=RANDOM_STATE,
+    )
+
+    cv_scores = []
+
+    for fold, (train_idx, test_idx) in enumerate(cv.split(X, y), start=1):
+        X_train = X.iloc[train_idx]
+        X_test = X.iloc[test_idx]
+        y_train = y.iloc[train_idx]
+        y_test = y.iloc[test_idx]
+
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+
+        model = RandomForestClassifier(**MODEL_PARAMS)
+        model.fit(X_train_scaled, y_train)
+
+        score = model.score(X_test_scaled, y_test)
+        cv_scores.append(score)
+        print(f"Fold {fold}: {score:.1%}")
+
+    cv_scores = np.array(cv_scores)
+
+    print("\nKết quả Cross-Validation:")
+    print(f"- Mean Accuracy: {cv_scores.mean():.1%}")
+    print(f"- Std Deviation: {cv_scores.std():.3f}")
+    print(f"- Min Accuracy : {cv_scores.min():.1%}")
+    print(f"- Max Accuracy : {cv_scores.max():.1%}")
+
+    return cv_scores
+
+
+def train_test_evaluation(X, y):
+    """Train/test split 80/20 và đánh giá chênh lệch train-test."""
+    print_section("2. TRAIN/TEST EVALUATION")
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=TEST_SIZE,
+        random_state=RANDOM_STATE,
+        stratify=y,
+    )
+
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
-    
-    # Train
-    model = RandomForestClassifier(**model_params)
+
+    model = RandomForestClassifier(**MODEL_PARAMS)
     model.fit(X_train_scaled, y_train)
-    
-    # Evaluate
-    score = model.score(X_test_scaled, y_test)
-    cv_scores.append(score)
-    print(f"   Fold {fold}: {score:.1%}")
 
-cv_mean = np.mean(cv_scores)
-cv_std = np.std(cv_scores)
+    train_acc = model.score(X_train_scaled, y_train)
+    test_acc = model.score(X_test_scaled, y_test)
+    gap = train_acc - test_acc
 
-print(f"\n📊 Kết quả Cross-Validation:")
-print(f"   - Mean Accuracy: {cv_mean:.1%}")
-print(f"   - Std Deviation: {cv_std:.3f}")
-print(f"   - Min: {min(cv_scores):.1%}")
-print(f"   - Max: {max(cv_scores):.1%}")
+    print(f"Train size: {len(X_train):,}")
+    print(f"Test size : {len(X_test):,}")
+    print(f"Train Accuracy: {train_acc:.1%}")
+    print(f"Test Accuracy : {test_acc:.1%}")
+    print(f"Train-Test Gap: {gap:.1%}")
 
-if cv_std < 0.02:
-    print(f"   ✅ Model ổn định (std < 2%)")
-else:
-    print(f"   ⚠️ Model có biến động (std ≥ 2%)")
-
-# ============================================================================
-# 2. OVERFITTING CHECK
-# ============================================================================
-
-print("\n" + "="*70)
-print("2️⃣ OVERFITTING CHECK")
-print("="*70)
-
-# Train/test split
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
-
-# Scale
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
-
-# Train model
-model = RandomForestClassifier(**model_params)
-model.fit(X_train_scaled, y_train)
-
-# Evaluate on both sets
-train_acc = model.score(X_train_scaled, y_train)
-test_acc = model.score(X_test_scaled, y_test)
-gap = train_acc - test_acc
-
-print(f"   - Train Accuracy: {train_acc:.1%}")
-print(f"   - Test Accuracy: {test_acc:.1%}")
-print(f"   - Gap (Train - Test): {gap:.1%}")
-
-if gap > 0.10:
-    print(f"   ⚠️ CẢNH BÁO: Overfitting nghiêm trọng (gap > 10%)")
-elif gap > 0.05:
-    print(f"   ⚠️ Có dấu hiệu overfitting nhẹ (gap 5-10%)")
-else:
-    print(f"   ✅ Model không bị overfitting đáng kể (gap < 5%)")
-
-# ============================================================================
-# 3. CALIBRATION CHECK
-# ============================================================================
-
-print("\n" + "="*70)
-print("3️⃣ CALIBRATION CHECK")
-print("="*70)
-
-# Predict probabilities
-y_proba = model.predict_proba(X_test_scaled)[:, 1]
-
-# Method 1: Simple binning
-bins = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
-bin_labels = ['0-20%', '20-40%', '40-60%', '60-80%', '80-100%']
-
-print("\n📊 Phân tích theo bin xác suất:")
-print(f"{'Bin Xác Suất':<15} {'Số Mẫu':<10} {'Tỷ Lệ Thực':<15} {'Chênh Lệch':<15}")
-print("-" * 60)
-
-for i in range(len(bins)-1):
-    mask = (y_proba >= bins[i]) & (y_proba < bins[i+1])
-    n_samples = mask.sum()
-    
-    if n_samples > 0:
-        actual_rate = y_test[mask].mean()
-        expected_rate = (bins[i] + bins[i+1]) / 2
-        diff = abs(actual_rate - expected_rate)
-        
-        print(f"{bin_labels[i]:<15} {n_samples:<10} {actual_rate:>7.1%}        {diff:>7.1%}")
-
-# Method 2: Calibration curve
-prob_true, prob_pred = calibration_curve(y_test, y_proba, n_bins=10, strategy='uniform')
-
-print("\n📈 Calibration Curve (10 bins):")
-for i, (true_p, pred_p) in enumerate(zip(prob_true, prob_pred), 1):
-    diff = abs(true_p - pred_p)
-    status = "✅" if diff < 0.1 else "⚠️"
-    print(f"   Bin {i:2d}: Dự đoán {pred_p:.1%} → Thực tế {true_p:.1%} (chênh {diff:.1%}) {status}")
-
-avg_diff = np.mean(np.abs(prob_true - prob_pred))
-print(f"\n📊 Chênh lệch trung bình: {avg_diff:.1%}")
-
-if avg_diff < 0.05:
-    print("   ✅ Model đã calibrated tốt (chênh < 5%)")
-elif avg_diff < 0.10:
-    print("   ⚠️ Calibration chấp nhận được (chênh 5-10%)")
-else:
-    print("   ⚠️ Model cần calibration (chênh > 10%)")
-
-# Save calibration plot
-plt.figure(figsize=(8, 6))
-plt.plot([0, 1], [0, 1], 'k--', label='Perfectly calibrated')
-plt.plot(prob_pred, prob_true, 'o-', label='Random Forest')
-plt.xlabel('Mean Predicted Probability')
-plt.ylabel('Fraction of Positives')
-plt.title('Calibration Curve - Bestseller Model')
-plt.legend()
-plt.grid(True, alpha=0.3)
-plt.tight_layout()
-plt.savefig('outputs/charts/calibration_curve.png', dpi=150)
-print("\n💾 Đã lưu calibration plot: outputs/charts/calibration_curve.png")
-
-# ============================================================================
-# 4. STABILITY CHECK
-# ============================================================================
-
-print("\n" + "="*70)
-print("4️⃣ STABILITY CHECK (Multiple Random Seeds)")
-print("="*70)
-
-seeds = [0, 1, 42, 100, 123]
-stability_results = []
-
-for seed in seeds:
-    # Train/test split với seed khác nhau
-    X_tr, X_te, y_tr, y_te = train_test_split(
-        X, y, test_size=0.2, random_state=seed, stratify=y
+    print(
+        "\nNhận xét: Chênh lệch train-test được báo cáo trực tiếp để đánh giá "
+        "dấu hiệu quá khớp; không áp dụng ngưỡng cứng để tự động kết luận."
     )
-    
-    # Scale
-    sc = StandardScaler()
-    X_tr_scaled = sc.fit_transform(X_tr)
-    X_te_scaled = sc.transform(X_te)
-    
-    # Train model với seed khác nhau
-    params = model_params.copy()
-    params['random_state'] = seed
-    m = RandomForestClassifier(**params)
-    m.fit(X_tr_scaled, y_tr)
-    
-    # Evaluate
-    acc = m.score(X_te_scaled, y_te)
-    
-    # Feature importance top 3
-    feature_importance = pd.DataFrame({
-        'feature': feature_cols,
-        'importance': m.feature_importances_
-    }).sort_values('importance', ascending=False)
-    
-    top3 = feature_importance.head(3)['feature'].tolist()
-    
-    stability_results.append({
-        'seed': seed,
-        'accuracy': acc,
-        'top3_features': top3
-    })
-    
-    print(f"   Seed {seed:3d}: Accuracy {acc:.1%}, Top 3 features: {', '.join(top3[:3])}")
 
-# Analyze stability
-accuracies = [r['accuracy'] for r in stability_results]
-acc_mean = np.mean(accuracies)
-acc_std = np.std(accuracies)
-acc_range = max(accuracies) - min(accuracies)
+    return {
+        "model": model,
+        "scaler": scaler,
+        "X_train": X_train,
+        "X_test": X_test,
+        "y_train": y_train,
+        "y_test": y_test,
+        "X_train_scaled": X_train_scaled,
+        "X_test_scaled": X_test_scaled,
+        "train_acc": train_acc,
+        "test_acc": test_acc,
+        "gap": gap,
+    }
 
-print(f"\n📊 Phân tích Stability:")
-print(f"   - Mean Accuracy: {acc_mean:.1%}")
-print(f"   - Std Deviation: {acc_std:.3f}")
-print(f"   - Range: {acc_range:.1%}")
 
-if acc_std < 0.01:
-    print(f"   ✅ Model rất ổn định (std < 1%)")
-elif acc_std < 0.02:
-    print(f"   ✅ Model ổn định (std < 2%)")
-else:
-    print(f"   ⚠️ Model có biến động (std ≥ 2%)")
+def calibration_evaluation(model, X_test_scaled, y_test):
+    """
+    Đánh giá calibration dựa trên mean predicted probability
+    và fraction of positives trong từng bin.
+    """
+    print_section("3. CALIBRATION CHECK")
 
-# ============================================================================
-# 5. BASELINE COMPARISON
-# ============================================================================
+    y_proba = model.predict_proba(X_test_scaled)[:, 1]
 
-print("\n" + "="*70)
-print("5️⃣ SO SÁNH VỚI BASELINE NGÂY THƠ")
-print("="*70)
+    prob_true, prob_pred = calibration_curve(
+        y_test,
+        y_proba,
+        n_bins=10,
+        strategy="uniform",
+    )
 
-# Baseline: always predict majority class (non-bestseller)
-baseline_pred = np.zeros(len(y_test))  # Dự đoán tất cả là 0 (non-bestseller)
-baseline_acc = accuracy_score(y_test, baseline_pred)
+    print(f"{'Bin':<6}{'Mean Predicted':>18}{'Actual Rate':>16}{'Difference':>14}")
+    print("-" * 54)
 
-# Random baseline
-random_acc = y_test.mean()  # Xác suất dự đoán đúng nếu random
+    differences = []
 
-print(f"   - Baseline 1 (Dự đoán tất cả = 0): {baseline_acc:.1%}")
-print(f"   - Baseline 2 (Random guess): {random_acc:.1%}")
-print(f"   - Model của tôi (Test Accuracy): {test_acc:.1%}")
-print(f"   - Improvement vs Baseline 1: {test_acc - baseline_acc:+.1%}")
-print(f"   - Improvement vs Random: {test_acc - random_acc:+.1%}")
+    for i, (pred_p, true_p) in enumerate(zip(prob_pred, prob_true), start=1):
+        diff = abs(true_p - pred_p)
+        differences.append(diff)
+        print(f"{i:<6}{pred_p:>17.1%}{true_p:>16.1%}{diff:>14.1%}")
 
-if test_acc > baseline_acc + 0.10:
-    print(f"   ✅ Model vượt trội so với baseline (>10%)")
-elif test_acc > baseline_acc + 0.05:
-    print(f"   ✅ Model tốt hơn baseline đáng kể (5-10%)")
-else:
-    print(f"   ⚠️ Model chưa thực sự tốt hơn baseline nhiều (<5%)")
+    avg_diff = float(np.mean(differences)) if differences else np.nan
+    print(f"\nMean absolute calibration difference: {avg_diff:.1%}")
 
-# ============================================================================
-# 6. CONFUSION MATRIX & CLASSIFICATION REPORT
-# ============================================================================
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-print("\n" + "="*70)
-print("6️⃣ CONFUSION MATRIX & CLASSIFICATION REPORT")
-print("="*70)
+    plt.figure(figsize=(8, 6))
+    plt.plot([0, 1], [0, 1], "k--", label="Perfect calibration")
+    plt.plot(prob_pred, prob_true, "o-", label="Random Forest")
+    plt.xlabel("Mean Predicted Probability")
+    plt.ylabel("Fraction of Positives")
+    plt.title("Calibration Curve - Bestseller Model")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
 
-y_pred = model.predict(X_test_scaled)
-cm = confusion_matrix(y_test, y_pred)
+    output_path = os.path.join(OUTPUT_DIR, "calibration_curve.png")
+    plt.savefig(output_path, dpi=150)
+    plt.close()
 
-print("\n📊 Confusion Matrix:")
-print(f"                 Predicted: 0    Predicted: 1")
-print(f"Actual: 0        {cm[0,0]:>6}       {cm[0,1]:>6}")
-print(f"Actual: 1        {cm[1,0]:>6}       {cm[1,1]:>6}")
+    print(f"Đã lưu calibration plot: {output_path}")
+    return avg_diff
 
-print("\n📊 Classification Report:")
-print(classification_report(y_test, y_pred, 
-                          target_names=['Non-Bestseller', 'Bestseller'],
-                          digits=3))
 
-# ============================================================================
-# 7. FEATURE IMPORTANCE
-# ============================================================================
+def stability_evaluation(X, y, feature_cols):
+    """Đánh giá độ ổn định của mô hình qua nhiều random seed."""
+    print_section("4. STABILITY CHECK")
 
-print("\n" + "="*70)
-print("7️⃣ FEATURE IMPORTANCE")
-print("="*70)
+    results = []
 
-feature_importance = pd.DataFrame({
-    'feature': feature_cols,
-    'importance': model.feature_importances_
-}).sort_values('importance', ascending=False)
+    for seed in STABILITY_SEEDS:
+        X_train, X_test, y_train, y_test = train_test_split(
+            X,
+            y,
+            test_size=TEST_SIZE,
+            random_state=seed,
+            stratify=y,
+        )
 
-print("\n📊 Top 10 Features quan trọng nhất:")
-for idx, row in feature_importance.head(10).iterrows():
-    print(f"   {row['feature']:<25} {row['importance']:.3f}")
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
 
-# ============================================================================
-# TỔNG KẾT & KẾT LUẬN
-# ============================================================================
+        params = MODEL_PARAMS.copy()
+        params["random_state"] = seed
 
-print("\n" + "="*70)
-print("📝 TỔNG KẾT & KẾT LUẬN")
-print("="*70)
+        model = RandomForestClassifier(**params)
+        model.fit(X_train_scaled, y_train)
+        accuracy = model.score(X_test_scaled, y_test)
 
-print("\n✅ ĐIỂM MẠNH:")
-strengths = []
+        importance_df = pd.DataFrame({
+            "feature": feature_cols,
+            "importance": model.feature_importances_,
+        }).sort_values("importance", ascending=False)
 
-if cv_std < 0.02:
-    strengths.append("Model ổn định qua nhiều lần chia dữ liệu (CV std < 2%)")
-    
-if gap < 0.05:
-    strengths.append("Không bị overfitting đáng kể (train-test gap < 5%)")
-    
-if avg_diff < 0.10:
-    strengths.append("Calibration chấp nhận được (avg diff < 10%)")
-    
-if acc_std < 0.02:
-    strengths.append("Kết quả ổn định với các random seed khác nhau")
-    
-if test_acc > baseline_acc + 0.10:
-    strengths.append(f"Vượt trội so với baseline ({test_acc - baseline_acc:+.1%})")
+        top3 = importance_df.head(3)["feature"].tolist()
 
-for i, s in enumerate(strengths, 1):
-    print(f"   {i}. {s}")
+        results.append({
+            "seed": seed,
+            "accuracy": accuracy,
+            "top3_features": top3,
+        })
 
-print("\n⚠️ HẠN CHẾ CẦN LƯU Ý:")
-limitations = []
+        print(
+            f"Seed {seed:>3}: Accuracy = {accuracy:.1%}; "
+            f"Top 3 = {', '.join(top3)}"
+        )
 
-if cv_std >= 0.02:
-    limitations.append(f"Model có biến động qua các fold (std = {cv_std:.3f})")
-    
-if gap >= 0.05:
-    limitations.append(f"Có dấu hiệu overfitting (gap = {gap:.1%})")
-    
-if avg_diff >= 0.10:
-    limitations.append(f"Calibration chưa tốt (avg diff = {avg_diff:.1%})")
-    
-if test_acc < baseline_acc + 0.10:
-    limitations.append(f"Chưa vượt trội nhiều so với baseline")
+    accuracies = np.array([r["accuracy"] for r in results])
 
-# Thêm hạn chế về dữ liệu
-limitations.append("Chỉ có 8 features, có thể thiếu thông tin quan trọng")
-limitations.append("Data imbalance (30% bestseller, 70% non-bestseller)")
-limitations.append("Định nghĩa bestseller dựa trên quantile 70%, có thể chủ quan")
+    print("\nThống kê stability:")
+    print(f"- Mean Accuracy: {accuracies.mean():.1%}")
+    print(f"- Std Deviation: {accuracies.std():.3f}")
+    print(f"- Range        : {(accuracies.max() - accuracies.min()):.1%}")
 
-for i, l in enumerate(limitations, 1):
-    print(f"   {i}. {l}")
+    return results
 
-print("\n💡 ĐÁNH GIÁ CUỐI CÙNG:")
-if test_acc > 0.80 and cv_std < 0.02 and gap < 0.10:
-    print("   ✅ Model đáng tin cậy, có thể sử dụng cho Streamlit/Dashboard")
-    print("   ✅ Kết quả có thể trình bày trong thesis với độ tin cậy cao")
-elif test_acc > 0.75:
-    print("   ⚠️ Model chấp nhận được, nhưng cần lưu ý hạn chế khi trình bày")
-    print("   ⚠️ Nên đề cập đến các điểm yếu trong phần \"Hạn chế\" của thesis")
-else:
-    print("   ❌ Model chưa đủ tốt, cần cải thiện trước khi sử dụng")
+
+def baseline_evaluation(X_train_scaled, X_test_scaled, y_train, y_test, model_acc):
+    """
+    So sánh Random Forest với hai baseline bằng DummyClassifier:
+    - most_frequent: luôn dự đoán lớp phổ biến nhất
+    - stratified: dự đoán ngẫu nhiên theo phân bố lớp tập huấn luyện
+    """
+    print_section("5. BASELINE COMPARISON")
+
+    baseline_majority = DummyClassifier(strategy="most_frequent")
+    baseline_majority.fit(X_train_scaled, y_train)
+    majority_pred = baseline_majority.predict(X_test_scaled)
+    majority_acc = accuracy_score(y_test, majority_pred)
+
+    baseline_random = DummyClassifier(
+        strategy="stratified",
+        random_state=RANDOM_STATE,
+    )
+    baseline_random.fit(X_train_scaled, y_train)
+    random_pred = baseline_random.predict(X_test_scaled)
+    random_acc = accuracy_score(y_test, random_pred)
+
+    print(f"Majority baseline Accuracy : {majority_acc:.1%}")
+    print(f"Random baseline Accuracy   : {random_acc:.1%}")
+    print(f"Random Forest Test Accuracy: {model_acc:.1%}")
+    print(f"Improvement vs majority    : {model_acc - majority_acc:+.1%}")
+    print(f"Improvement vs random      : {model_acc - random_acc:+.1%}")
+
+    return {
+        "majority_acc": majority_acc,
+        "random_acc": random_acc,
+    }
+
+
+def classification_evaluation(model, X_test_scaled, y_test):
+    """Confusion Matrix và Classification Report."""
+    print_section("6. CONFUSION MATRIX & CLASSIFICATION REPORT")
+
+    y_pred = model.predict(X_test_scaled)
+    cm = confusion_matrix(y_test, y_pred)
+
+    print("Confusion Matrix:")
+    print(f"{'':<20}{'Predicted 0':>14}{'Predicted 1':>14}")
+    print(f"{'Actual 0':<20}{cm[0, 0]:>14}{cm[0, 1]:>14}")
+    print(f"{'Actual 1':<20}{cm[1, 0]:>14}{cm[1, 1]:>14}")
+
+    print("\nClassification Report:")
+    print(
+        classification_report(
+            y_test,
+            y_pred,
+            target_names=["Non-Bestseller", "Bestseller"],
+            digits=3,
+        )
+    )
+
+    return cm
+
+
+def feature_importance_evaluation(model, feature_cols):
+    """In Feature Importance của Random Forest."""
+    print_section("7. FEATURE IMPORTANCE")
+
+    importance_df = pd.DataFrame({
+        "feature": feature_cols,
+        "importance": model.feature_importances_,
+    }).sort_values("importance", ascending=False)
+
+    print("Top features:")
+    for _, row in importance_df.iterrows():
+        print(f"{row['feature']:<30} {row['importance']:.4f}")
+
+    return importance_df
+
+
+def save_final_model(model, scaler):
+    """Lưu model/scaler để khớp với pipeline đánh giá hiện tại."""
+    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
+
+    with open(MODEL_PATH, "wb") as f:
+        pickle.dump(model, f)
+
+    with open(SCALER_PATH, "wb") as f:
+        pickle.dump(scaler, f)
+
+    print(f"\nĐã lưu model : {MODEL_PATH}")
+    print(f"Đã lưu scaler: {SCALER_PATH}")
+
+
+def main():
+    print_section("ĐÁNH GIÁ TỔNG THỂ MODEL BESTSELLER PREDICTION")
+
+    if not os.path.exists(DATA_PATH):
+        raise FileNotFoundError(f"Không tìm thấy file dữ liệu: {DATA_PATH}")
+
+    print("Đang tải dữ liệu...")
+    df = pd.read_csv(DATA_PATH, encoding="utf-8")
+
+    print(f"Số sách: {len(df):,}")
+    print(f"Số category: {df['category_name'].nunique()}")
+
+    X, y, feature_cols = prepare_data(df)
+
+    print(f"Số features: {len(feature_cols)}")
+    print(f"- Numeric features: {len(NUMERIC_FEATURES)}")
+    print(f"- Category one-hot: {len(feature_cols) - len(NUMERIC_FEATURES)}")
+    print(f"Tỷ lệ Bestseller: {y.mean():.1%} ({int(y.sum()):,}/{len(y):,})")
+
+    cv_scores = cross_validation_evaluation(X, y)
+
+    evaluation = train_test_evaluation(X, y)
+
+    avg_calibration_diff = calibration_evaluation(
+        evaluation["model"],
+        evaluation["X_test_scaled"],
+        evaluation["y_test"],
+    )
+
+    stability_results = stability_evaluation(X, y, feature_cols)
+
+    baseline_results = baseline_evaluation(
+        evaluation["X_train_scaled"],
+        evaluation["X_test_scaled"],
+        evaluation["y_train"],
+        evaluation["y_test"],
+        evaluation["test_acc"],
+    )
+
+    classification_evaluation(
+        evaluation["model"],
+        evaluation["X_test_scaled"],
+        evaluation["y_test"],
+    )
+
+    importance_df = feature_importance_evaluation(
+        evaluation["model"],
+        feature_cols,
+    )
+
+    save_final_model(
+        evaluation["model"],
+        evaluation["scaler"],
+    )
+
+    print_section("TỔNG KẾT")
+
+    stability_acc = np.array([r["accuracy"] for r in stability_results])
+
+    print(f"CV Mean Accuracy           : {cv_scores.mean():.1%}")
+    print(f"CV Std                     : {cv_scores.std():.3f}")
+    print(f"Train Accuracy             : {evaluation['train_acc']:.1%}")
+    print(f"Test Accuracy              : {evaluation['test_acc']:.1%}")
+    print(f"Train-Test Gap             : {evaluation['gap']:.1%}")
+    print(f"Calibration Mean Difference: {avg_calibration_diff:.1%}")
+    print(f"Stability Mean Accuracy    : {stability_acc.mean():.1%}")
+    print(f"Stability Std              : {stability_acc.std():.3f}")
+    print(f"Majority Baseline          : {baseline_results['majority_acc']:.1%}")
+    print(f"Random Baseline            : {baseline_results['random_acc']:.1%}")
+
+    print("\nTop 5 Feature Importance:")
+    for _, row in importance_df.head(5).iterrows():
+        print(f"- {row['feature']}: {row['importance']:.4f}")
+
+    print("\nHoàn thành đánh giá model.")
+
+
+if __name__ == "__main__":
+    main()

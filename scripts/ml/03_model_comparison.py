@@ -149,7 +149,7 @@ comparison_df = pd.DataFrame({
 for col in comparison_df.columns[1:]:
     comparison_df[col] = comparison_df[col].apply(lambda x: f"{x:.3f}")
 
-# In bảng với format đẹp
+# In bảng với format 
 print(f"{'Model':<25} {'Accuracy':<12} {'Precision':<12} {'Recall':<12} {'F1-Score':<12} {'Gap':<12}")
 print("-" * 85)
 

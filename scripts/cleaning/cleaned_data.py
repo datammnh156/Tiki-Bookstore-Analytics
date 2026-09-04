@@ -6,6 +6,10 @@ print( "So luong dong trong file: ", len(df))
 df = df.drop_duplicates(subset=['id'], keep='first')
 print("So luong dong sau khi loai bo trung lap: ", len(df))
 
+#Loai bo cot khong co gia tri hoac gia tri rong
+df = df.drop(columns=['favourite_count'])
+
+
 #Nhieu sach chua co ai danh gia nen API Tiki tra rating_average = 0
 sosach_rating_0 = (df[df['rating_average'] == 0].shape[0])
 print("So luong sach co rating = 0: ", sosach_rating_0)

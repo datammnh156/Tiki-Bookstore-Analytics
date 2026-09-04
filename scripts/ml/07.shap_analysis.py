@@ -80,7 +80,7 @@ def calculate_shap_values(model, X_test_scaled, feature_cols):
     print("\nDang khoi tao TreeExplainer (dung cho decision tree-based models)...")
     explainer = shap.TreeExplainer(model)
     
-    print("Dang tinh SHAP values cho {} mau...")
+    print(f"Dang tinh SHAP values cho {len(X_test_scaled)} mau...")
     shap_values_raw = explainer.shap_values(X_test_scaled)
     
     # Voi RandomForestClassifier nhi phan, shap_values la array 3D: (n_samples, n_features, 2)
@@ -99,7 +99,7 @@ def calculate_shap_values(model, X_test_scaled, feature_cols):
     return explainer, shap_values
 
 
-def plot_summary(shap_values, X_test_scaled, feature_cols):
+def plot_summary(shap_values, X_test_scaled, feature_cols, X_test):
     """
     Ve summary plot (beeswarm) - tong quan feature anh huong
     """
@@ -113,8 +113,11 @@ def plot_summary(shap_values, X_test_scaled, feature_cols):
     shap_df = pd.DataFrame(X_test_scaled, columns=feature_cols)
     
     plt.figure(figsize=(10, 6))
-    shap.summary_plot(shap_values, X_test_scaled, feature_names=feature_cols,
-                      plot_type="beeswarm", show=False)
+    shap_df = pd.DataFrame(X_test_scaled, columns=feature_cols)
+
+    shap.summary_plot(shap_values,shap_df,feature_names=feature_cols, plot_type="dot",
+        show=False,max_display=15
+)
     
     plt.title("SHAP Summary Plot - Random Forest Bestseller Prediction")
     plt.tight_layout()
@@ -248,23 +251,7 @@ def print_shap_explanation():
     print("GIAI THICH SHAP CHO THESIS")
     print("=" * 70)
     
-    explanation = """
-SHAP (SHapley Additive exPlanations) la phuong phap hoan toan khac voi 
-feature importance thong thuong. Trong khi feature importance chi noi tong 
-the feature quan trong ra sao, SHAP chi ra TRI TUYETDA cua tung feature 
-cho TUng du diem RIENG BIET. Dieu nay co nghia: mot feature co the rất 
-quan trong (cao feature importance), nhung voi sach nao do, contribution 
-cua no co the la am (giam xac suat bestseller), con voi sach khac lai duong 
-(tang xac suat). SHAP cung co the giai thich tai sao model lam dieu gi the: 
-neu xac suat bestseller thap, nao la feature nao da "keo xuong", va nao 
-duoc "keo len". Noi cach khac, SHAP cung cap "ly giai" cung cap chi tiet 
-va co the tin cam hon so voi chi so importance thong thuong, dac biet khi 
-can giai thich ket qua du doan cho tung du diem cu the (gia tri to?ng).
-"""
-    
-    print(explanation)
-    
-    return explanation
+
 
 
 def main():
@@ -284,7 +271,7 @@ def main():
     explainer, shap_values = calculate_shap_values(model, X_test_scaled, feature_cols)
     
     # Buoc 3: Ve summary plot
-    plot_summary(shap_values, X_test_scaled, feature_cols)
+    plot_summary(shap_values, X_test_scaled, feature_cols, X_test)
     
     # Buoc 4: Ve waterfall plots cho vu du
     plot_waterfall_examples(model, explainer, shap_values, X_test_scaled, y_test, feature_cols)

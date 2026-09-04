@@ -92,7 +92,7 @@ def train_logistic_model(data_path='data/clean/tiki_books_cleaned.csv',
     
     model = LogisticRegression(
         max_iter=1000,
-        random_state=42
+        random_state=42,
     )
     model.fit(X_train_scaled, y_train)
     print("Training hoan thanh")
@@ -166,41 +166,11 @@ def train_logistic_model(data_path='data/clean/tiki_books_cleaned.csv',
     print("TRAINING HOAN THANH")
     print("=" * 70)
     
-    # Kiem tra ket qua co khop voi ky vong khong
-    # (dam bao cau hinh dong bo voi Random Forest)
-    print("\nKiem tra ket qua:")
-    precision = precision_score(y_test, y_pred)
-    recall = recall_score(y_test, y_pred)
-    
-    print("Ky vong: Accuracy ~0.787, Precision ~0.699, Recall ~0.522")
-    print("Thuc te: Accuracy {:.3f}, Precision {:.3f}, Recall {:.3f}".format(
-        test_acc, precision, recall
-    ))
-    
-    # Kiem tra xem co khop khong (sai so < 1%)
-    if abs(test_acc - 0.787) < 0.01 and abs(precision - 0.699) < 0.01:
-        print("Ket qua khop - cau hinh dong bo chinh xac")
-    else:
-        print("Canh bao: ket qua khac biet - can kiem tra lai")
-    
-    # Tra ve ket qua
-    return {
-        'model': model,
-        'scaler': scaler,
-        'train_accuracy': train_acc,
-        'test_accuracy': test_acc,
-        'feature_cols': feature_cols
-    }
 
 
 if __name__ == "__main__":
     # Chay ham train khi execute file nay truc tiep
     result = train_logistic_model()
-    
     print("\nModel Logistic Regression da duoc train va luu thanh cong.")
-    print("Su dung trong cac script khac bang cach:")
     print("  model = pickle.load(open('models/logistic_model.pkl', 'rb'))")
     print("  scaler = pickle.load(open('models/logistic_scaler.pkl', 'rb'))")
-    print("\nSo sanh voi Random Forest:")
-    print("  Random Forest: models/bestseller_model.pkl")
-    print("  Logistic Regression: models/logistic_model.pkl")

@@ -1,4 +1,4 @@
-#crawl data_tiki.py
+#crawl data_tiki.py - Version 2 (Chi tiết categories)
 import urllib.request
 import urllib.parse
 import json
@@ -6,16 +6,22 @@ import csv
 import time
 from datetime import datetime
 
+# 9 category_id CHÍNH XÁC từ Tiki.vn (đã xác minh thủ công)
 BOOK_SUBCATEGORIES = {
-    316: "Sách tiếng Việt",
-    320: "Sách nước ngoài",
-    1084: "Truyện tranh, Manga",
-    7358: "Sách giáo khoa",
+    839: "Văn học",
+    320: "Sách tiếng Anh",
+    846: "Kinh tế",
+    393: "Truyện thiếu nhi",
+    870: "Kỹ năng sống",
+    2321: "Giáo khoa giáo trình",
+    1084: "Truyện tranh",
+    2320: "Sách tham khảo",
+    887: "Ngoại ngữ từ điển",
 }
 
-PRODUCTS_PER_CATEGORY = 1000  # đổi số này nếu muốn cào nhiều/ít hơn
+PRODUCTS_PER_CATEGORY = 445  # ~4000 sách tổng cộng ÷ 9 categories
 DELAY_BETWEEN_REQUESTS = 1.8  
-PAGE_SIZE = 40  # số sản phẩm mỗi lần gọi API (giới hạn thường gặp của Tiki)
+PAGE_SIZE = 40
 
 LISTING_API = "https://tiki.vn/api/personalish/v1/blocks/listings"
 HEADERS = {
@@ -32,19 +38,19 @@ CAC_FIELD_CAN_LAY = [
     "badges_new",
 ]
 
-#Lay so luong san pham da ban
 def get_quantity_sold(sp):
     quantity_sold = sp.get("quantity_sold")
-
     if type(quantity_sold) == dict:
         return quantity_sold.get("value", 0)
-
     return quantity_sold if quantity_sold else 0
 
-def crawl_1_category(category_id: int, category_name: str, so_luong: int):
+def crawl_1_category(category_id, category_name, so_luong, 
+                     total_target, total_crawled, start_time):
+    """Crawl một category với in tiến trình chi tiết mỗi 50 sách"""
     ket_qua = []
     page = 1
     da_thay_id = set()
+    last_report = 0
 
     while len(ket_qua) < so_luong:
         params = {
@@ -53,8 +59,6 @@ def crawl_1_category(category_id: int, category_name: str, so_luong: int):
             "category": category_id,
         }
         try:
-#Goi API de lay danh sach san pham
-            # Build URL with query parameters
             url = LISTING_API + '?' + urllib.parse.urlencode(params)
             req = urllib.request.Request(url, headers=HEADERS)
             
@@ -63,75 +67,111 @@ def crawl_1_category(category_id: int, category_name: str, so_luong: int):
                 json_data = json.loads(response_data)
                 data = json_data.get("data", [])
         except Exception as e:
-            print(f"  Lỗi ở page {page} của '{category_name}': {e}")
+            print(f"  ❌ Lỗi ở page {page} của '{category_name}': {e}")
             break
-#Neu khong con san pham thi dung
+        
         if not data:
-            print(f"  Hết sản phẩm ở '{category_name}' (page {page}), dừng sớm.")
+            print(f"  ⚠️  Hết sản phẩm ở '{category_name}' (page {page})")
             break
-#Duyet de lay thong tin san pham
+        
         for sp in data:
             sp_id = sp.get("id")
             if sp_id in da_thay_id:
                 continue
             da_thay_id.add(sp_id)
-#Lay cac field can thiet
+            
             dong = {k: sp.get(k) for k in CAC_FIELD_CAN_LAY}
-#Lay so luong da ban va category
             dong["quantity_sold"] = get_quantity_sold(sp)
             dong["category_id"] = category_id
             dong["category_name"] = category_name
             ket_qua.append(dong)
-#Neu da du so luong san pham thi dung
+            
+            # In tiến trình mỗi 50 sách
+            if len(ket_qua) - last_report >= 50 or len(ket_qua) == so_luong:
+                last_report = len(ket_qua)
+                current_total = total_crawled + len(ket_qua)
+                elapsed = int(time.time() - start_time)
+                rate = current_total / elapsed if elapsed > 0 else 0
+                remaining = (total_target - current_total) / rate if rate > 0 else 0
+                
+                print(f"  📖 Đang crawl {category_name}: {len(ket_qua):,}/{so_luong:,}")
+                print(f"  📊 Tổng: {current_total:,}/{total_target:,} | "
+                      f"⏱️  Đã trôi: {elapsed//60:02d}:{elapsed%60:02d} | "
+                      f"⏳ Còn lại: ~{int(remaining)//60:02d}:{int(remaining)%60:02d}")
+            
             if len(ket_qua) >= so_luong:
                 break
-
-        print(f"  [{category_name}] Đã crawl {len(ket_qua)}/{so_luong}")
+        
         page += 1
         time.sleep(DELAY_BETWEEN_REQUESTS)
-#Kiem tra neu page > 100 de phong truong hop API tra ve du lieu bat thuong gay vong lap
-        if page > 100:  # phòng vòng lặp vô hạn nếu API trả dữ liệu bất thường
+        
+        if page > 100:
             break
 
     return ket_qua
 
 
 def main():
+    print("="*80)
+    print("🚀 CRAWL TIKI BOOKS - CHI TIẾT CATEGORIES")
+    print("="*80)
+    print()
+    
     all_products = []
-
-    # Crawl tung danh muc sach
-    for category_id, category_name in BOOK_SUBCATEGORIES.items():
-        print(f"\nDang crawl: {category_name} (ID: {category_id})")
-
+    start_time = time.time()
+    total_categories = len(BOOK_SUBCATEGORIES)
+    total_target = PRODUCTS_PER_CATEGORY * total_categories
+    
+    for idx, (category_id, category_name) in enumerate(BOOK_SUBCATEGORIES.items(), 1):
+        print(f"[{idx}/{total_categories}] 🔍 Đang crawl: {category_name} (ID: {category_id})")
+        print("-" * 80)
+        
         products = crawl_1_category(
             category_id,
             category_name,
-            PRODUCTS_PER_CATEGORY
+            PRODUCTS_PER_CATEGORY,
+            total_target,
+            len(all_products),
+            start_time
         )
-
-        # Gop ket qua vao danh sach chung
+        
         all_products.extend(products)
-
-    # Khong co du lieu thi dung
+        print(f"✅ Hoàn thành {category_name}: {len(products):,} sách")
+        print()
+    
     if not all_products:
-        print("Khong lay duoc san pham nao.")
+        print("❌ Không lấy được sản phẩm nào.")
         return
-
-    # Tao ten file theo thoi gian de tranh ghi de
-    file_name = f"tiki_books_{datetime.now():%Y%m%d_%H%M%S}.csv"
-
-    # Ghi du lieu ra file CSV
+    
+    # Tạo file CSV
+    file_name = f"data/raw/tiki_book_dataset_crawl.csv"
+    
     with open(file_name, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(
-            f,
-            fieldnames=all_products[0].keys()
-        )
-
-        writer.writeheader()        # Ghi ten cot
-        writer.writerows(all_products)  # Ghi toan bo du lieu
-
-    print(f"\nHoan tat. Tong so san pham: {len(all_products)}")
-    print(f"File da luu: {file_name}")
+        writer = csv.DictWriter(f, fieldnames=all_products[0].keys())
+        writer.writeheader()
+        writer.writerows(all_products)
+    
+    # Tính toán thống kê
+    total_time = int(time.time() - start_time)
+    category_dist = {}
+    for product in all_products:
+        cat = product.get("category_name", "Unknown")
+        category_dist[cat] = category_dist.get(cat, 0) + 1
+    
+    print("="*80)
+    print("📊 TỔNG KẾT")
+    print("="*80)
+    print(f"✅ Tổng số sách: {len(all_products):,}")
+    print()
+    print("📈 Phân bố theo category:")
+    for cat, count in sorted(category_dist.items(), key=lambda x: -x[1]):
+        pct = count / len(all_products) * 100
+        print(f"  {cat:<30} {count:>5,} ({pct:>5.1f}%)")
+    
+    print()
+    print(f"⏱️  Thời gian chạy: {total_time//3600}h {(total_time%3600)//60:02d}m {total_time%60:02d}s")
+    print(f"💾 File đã lưu: {file_name}")
+    print("="*80)
 
 
 if __name__ == "__main__":

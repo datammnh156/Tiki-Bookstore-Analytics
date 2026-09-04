@@ -1,33 +1,33 @@
-# Mô phỏng % giảm giá tối ưu cho 1 sản phẩm
-# LƯU Ý: Đây là mô phỏng dựa trên model dự đoán (correlational), không phải phân tích nhân quả (causal).
-    
+# Mô phỏng và đề xuất mức giảm giá cho 1 sản phẩm
+# LƯU Ý: Đây là mô phỏng dựa trên model dự đoán, không phải phân tích nhân quả.
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
 import io
+import pickle
 
-# Fix encoding cho Windows PowerShell
+# Fix encoding khi chạy trên Windows PowerShell
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
+
 def simulate_optimal_discount(product_id, df, model, scaler, feature_cols):
-    """
-    Mô phỏng % giảm giá tối ưu cho 1 sản phẩm
-    """
-    
-    # Tìm sách trong dataset
+    """Mô phỏng và đề xuất mức giảm giá cho 1 sản phẩm."""
+
+    # Tìm sách theo ID
     book = df[df['id'] == product_id]
-    
+
     if len(book) == 0:
         print(f"❌ Không tìm thấy sách với ID: {product_id}")
         return None
-    
+
     book = book.iloc[0]
-    
+
     # In thông tin sách
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("THÔNG TIN SÁCH")
-    print("="*70)
+    print("=" * 70)
     print(f"ID               : {book['id']}")
     print(f"Tên              : {book['name'][:60]}...")
     print(f"Danh mục         : {book['category_name']}")
@@ -36,249 +36,304 @@ def simulate_optimal_discount(product_id, df, model, scaler, feature_cols):
     print(f"Rating           : {book['rating_average']:.1f}/5.0")
     print(f"Số lượng bán     : {book['quantity_sold']:,} cuốn")
     print(f"Bestseller       : {'Có' if book['is_bestseller'] == 1 else 'Không'}")
-    print("="*70)
-    
-    # Chuẩn bị features gốc
+    print("=" * 70)
+
+    # Giữ nguyên các feature khác, chỉ thay đổi discount_rate
     base_features = {}
     for col in feature_cols:
         if col != 'discount_rate':
             base_features[col] = book[col]
-    
-    # Tạo dãy discount_rate từ 0% đến 50%
+
+    # Các mức giảm được mô phỏng: 0%, 5%, ..., 50%
     discount_rates = np.arange(0, 55, 5)
-    
-    # Mô phỏng xác suất bestseller
+
+    # Mô phỏng xác suất Bestseller ở từng mức giảm
     results = []
+
     for discount in discount_rates:
         features = base_features.copy()
         features['discount_rate'] = discount
+
         X_sim = pd.DataFrame([features], columns=feature_cols)
         X_sim_scaled = scaler.transform(X_sim)
         proba = model.predict_proba(X_sim_scaled)[0, 1]
+
         results.append({
             'discount_rate': discount,
             'bestseller_probability': proba
         })
-    
+
     results_df = pd.DataFrame(results)
-    
-    # Tìm discount tối ưu
-    optimal_idx = results_df['bestseller_probability'].idxmax()
-    optimal_discount = results_df.loc[optimal_idx, 'discount_rate']
-    optimal_prob = results_df.loc[optimal_idx, 'bestseller_probability']
-    
-    # In bảng kết quả
+
+    # Tìm mức giảm có xác suất cao nhất trong các mức đã mô phỏng
+    candidate_idx = results_df['bestseller_probability'].idxmax()
+    candidate_discount = results_df.loc[candidate_idx, 'discount_rate']
+    candidate_prob = results_df.loc[candidate_idx, 'bestseller_probability']
+
+    # Tính xác suất tại đúng mức giảm hiện tại của sách
+    current_discount = book['discount_rate']
+    current_features = base_features.copy()
+    current_features['discount_rate'] = current_discount
+
+    X_current = pd.DataFrame([current_features], columns=feature_cols)
+    X_current_scaled = scaler.transform(X_current)
+    current_prob = model.predict_proba(X_current_scaled)[0, 1]
+
+    # Chỉ đề xuất thay đổi nếu xác suất tăng ít nhất 5 điểm phần trăm
+    improvement_threshold = 0.05
+    improvement = candidate_prob - current_prob
+
+    if improvement >= improvement_threshold:
+        recommended_discount = candidate_discount
+        recommended_prob = candidate_prob
+        recommend_change = True
+    else:
+        recommended_discount = current_discount
+        recommended_prob = current_prob
+        improvement = 0
+        recommend_change = False
+
+    # In bảng kết quả mô phỏng
     print("\nKẾT QUẢ MÔ PHỎNG")
-    print("-"*70)
+    print("-" * 70)
     print(f"{'Discount':>10}  {'Xác suất':>12}  {'Trend':>10}  {'Ghi chú':<20}")
-    print("-"*70)
-    
-    prev_prob = 0
+    print("-" * 70)
+
+    prev_prob = None
+
     for _, row in results_df.iterrows():
         discount = row['discount_rate']
         prob = row['bestseller_probability']
-        
-        # Trend
-        if prob > prev_prob + 0.01:
+
+        # So sánh với mức mô phỏng trước đó
+        if prev_prob is None:
+            trend = "-"
+        elif prob > prev_prob + 0.01:
             trend = "↑"
         elif prob < prev_prob - 0.01:
             trend = "↓"
         else:
             trend = "→"
-        
-        # Ghi chú
+
         note = ""
-        if discount == optimal_discount:
-            note = "← TỐI ƯU"
-        elif abs(discount - book['discount_rate']) < 2.5:
-            note = "← HIỆN TẠI"
-        
+        if recommend_change and discount == recommended_discount:
+            note = "← ĐỀ XUẤT"
+
         print(f"{discount:>9.0f}%  {prob:>11.1%}  {trend:>10}  {note:<20}")
         prev_prob = prob
-    
-    print("-"*70)
-    
-    # Tính cải thiện
-    current_discount = book['discount_rate']
-    current_prob_data = results_df[results_df['discount_rate'] == current_discount]['bestseller_probability'].values
-    
-    if len(current_prob_data) > 0:
-        current_prob = current_prob_data[0]
+
+    print("-" * 70)
+
+    # In kết quả đề xuất
+    print("\nKẾT QUẢ ĐỀ XUẤT:")
+    print(f"  Discount hiện tại : {current_discount:>5.1f}% → Xác suất: {current_prob:>6.1%}")
+
+    if recommend_change:
+        print(f"  Discount đề xuất  : {recommended_discount:>5.0f}% → Xác suất: {recommended_prob:>6.1%}")
+        print(f"  Cải thiện         : {improvement:>+6.1%}")
     else:
-        closest_discount = min(discount_rates, key=lambda x: abs(x - current_discount))
-        current_prob = results_df[results_df['discount_rate'] == closest_discount]['bestseller_probability'].values[0]
-    
-    improvement = optimal_prob - current_prob
-    
-    # In gợi ý
-    print(f"\nGỢI Ý TỐI ƯU:")
-    print(f"  Discount hiện tại: {current_discount:>5.1f}% → Xác suất: {current_prob:>6.1%}")
-    print(f"  Discount tối ưu  : {optimal_discount:>5.0f}% → Xác suất: {optimal_prob:>6.1%}")
-    print(f"  Cải thiện        : {improvement:>+6.1%}")
-    print()
-    
+        print(f"  Đề xuất           : GIỮ NGUYÊN {current_discount:.1f}%")
+
     # Vẽ biểu đồ
-    plt.figure(figsize=(12, 6))
-    
-    plt.plot(results_df['discount_rate'], 
-             results_df['bestseller_probability'] * 100,
-             marker='o', linewidth=2, markersize=8, color='#2E86AB')
-    
-    plt.scatter([optimal_discount], [optimal_prob * 100], 
-                color='#A23B72', s=200, zorder=5, 
-                label=f'Tối ưu: {optimal_discount:.0f}% ({optimal_prob:.1%})')
-    
-    # Hiển thị điểm "Hiện tại"
-    if current_discount <= 50:
-        # Nếu discount hiện tại nằm trong range
-        current_data = results_df[results_df['discount_rate'] == current_discount]
-        if len(current_data) > 0:
-            current_idx = current_data.index[0]
-            current_prob_pct = results_df.loc[current_idx, 'bestseller_probability'] * 100
-            current_prob_display = results_df.loc[current_idx, 'bestseller_probability']
-            plt.scatter([current_discount], [current_prob_pct],
-                        color='#F18F01', s=200, zorder=5,
-                        label=f'Hiện tại: {current_discount:.0f}% ({current_prob_display:.1%})')
-        else:
-            # Nếu không có chính xác, tìm closest
-            closest_discount = min(discount_rates, key=lambda x: abs(x - current_discount))
-            closest_data = results_df[results_df['discount_rate'] == closest_discount]
-            if len(closest_data) > 0:
-                closest_idx = closest_data.index[0]
-                closest_prob_pct = results_df.loc[closest_idx, 'bestseller_probability'] * 100
-                closest_prob_display = results_df.loc[closest_idx, 'bestseller_probability']
-                plt.scatter([closest_discount], [closest_prob_pct],
-                            color='#F18F01', s=200, zorder=5, alpha=0.7,
-                            label=f'Hiện tại (≈{closest_discount:.0f}%): {closest_prob_display:.1%}')
-    else:
-        # Nếu discount hiện tại > 50%, tìm closest trong range
-        closest_discount = min(discount_rates, key=lambda x: abs(x - current_discount))
-        closest_data = results_df[results_df['discount_rate'] == closest_discount]
-        if len(closest_data) > 0:
-            closest_idx = closest_data.index[0]
-            closest_prob_pct = results_df.loc[closest_idx, 'bestseller_probability'] * 100
-            closest_prob_display = results_df.loc[closest_idx, 'bestseller_probability']
-            plt.scatter([closest_discount], [closest_prob_pct],
-                        color='#F18F01', s=200, zorder=5, alpha=0.7,
-                        label=f'Hiện tại (≈{closest_discount:.0f}%): {closest_prob_display:.1%}')
-    
-    plt.xlabel('Mức giảm giá (%)', fontsize=12, fontweight='bold')
-    plt.ylabel('Xác suất Bestseller (%)', fontsize=12, fontweight='bold')
-    plt.title(f'Mô phỏng: Giảm giá vs Xác suất Bestseller\n{book["name"][:60]}...', 
-              fontsize=14, fontweight='bold', pad=20)
-    plt.grid(True, alpha=0.3, linestyle='--')
-    plt.legend(fontsize=10, loc='best')
-    plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0f}%'))
-    plt.xticks(discount_rates)
+    fig, ax = plt.subplots(figsize=(10, 5.5))
+
+    # Đường mô phỏng
+    ax.plot(
+        results_df['discount_rate'],
+        results_df['bestseller_probability'] * 100,
+        marker='o',
+        markersize=5,
+        linewidth=2,
+        color='#1f77b4',
+        label='Mô phỏng',
+        zorder=2
+    )
+
+    # Điểm hiện tại (tròn, màu cam)
+    ax.scatter(
+        current_discount,
+        current_prob * 100,
+        s=150,
+        marker='o',
+        color='#ff7f0e',
+        edgecolors='black',
+        linewidth=1.5,
+        zorder=5,
+        label='Hiện tại'
+    )
+
+    # Annotation cho hiện tại
+    ax.annotate(
+        f'Hiện tại: {current_discount:.0f}% ({current_prob:.1%})',
+        xy=(current_discount, current_prob * 100),
+        xytext=(10, 15),
+        textcoords='offset points',
+        fontsize=9,
+        ha='left',
+        bbox=dict(boxstyle='round,pad=0.3', facecolor='#ff7f0e', alpha=0.2),
+        arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0', color='#ff7f0e', lw=1)
+    )
+
+    # Điểm đề xuất (chỉ khi recommend_change == True)
+    if recommend_change:
+        ax.scatter(
+            recommended_discount,
+            recommended_prob * 100,
+            s=150,
+            marker='o',
+            color='#2ca02c',
+            edgecolors='black',
+            linewidth=1.5,
+            zorder=5,
+            label='Đề xuất'
+        )
+
+        # Annotation cho đề xuất
+        ax.annotate(
+            f'Đề xuất: {recommended_discount:.0f}% ({recommended_prob:.1%})',
+            xy=(recommended_discount, recommended_prob * 100),
+            xytext=(10, -25),
+            textcoords='offset points',
+            fontsize=9,
+            ha='left',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='#2ca02c', alpha=0.2),
+            arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0', color='#2ca02c', lw=1)
+        )
+
+    # Cấu hình trục
+    ax.set_xlabel('Mức giảm giá (%)', fontsize=11, fontweight='bold')
+    ax.set_ylabel('Xác suất dự đoán Bestseller (%)', fontsize=11, fontweight='bold')
+    ax.set_xticks(discount_rates)
+    ax.set_xticklabels([f'{int(x)}' for x in discount_rates])
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{int(y)}%'))
+
+    # Tiêu đề
+    book_name = book['name'][:55] + ('...' if len(book['name']) > 55 else '')
+    ax.set_title(f'Mô phỏng mức giảm giá\n{book_name}', fontsize=12, fontweight='bold', pad=15)
+
+    # Grid nhẹ
+    ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.7)
+    ax.set_axisbelow(True)
+
+    # Legend
+    ax.legend(loc='best', fontsize=10, framealpha=0.95)
+
     plt.tight_layout()
-    
-    # Save plot
-    import os
-    plot_filename = f'outputs/charts/discount_optimization_{product_id}.png'
-    os.makedirs('outputs/charts', exist_ok=True)
-    plt.savefig(plot_filename, dpi=150, bbox_inches='tight')
-    print(f"Đã lưu biểu đồ: {plot_filename}\n")
-    
-    # Force flush output before showing plot
-    sys.stdout.flush()
-    
-    # Show plot
     plt.show()
-    plt.close()
-    
+
+    # Trả kết quả để dùng cho phần tổng kết
     return {
         'results': results_df,
-        'optimal_discount': optimal_discount,
-        'optimal_probability': optimal_prob,
+        'recommended_discount': recommended_discount,
+        'recommended_probability': recommended_prob,
+        'current_probability': current_prob,
+        'improvement': improvement,
+        'recommend_change': recommend_change,
         'book_info': book
     }
 
 
 def run_discount_optimization_demo(df, model, scaler, feature_cols, sample_ids=None):
-    """Chạy demo cho nhiều sản phẩm"""
-    
-    print("\n" + "="*70)
-    print("DEMO: MÔ PHỎNG % GIẢM GIÁ TỐI ƯU")
-    print("="*70)
-    
+    """Chạy demo mô phỏng cho 3 sản phẩm."""
+
+    print("\n" + "=" * 70)
+    print("DEMO: MÔ PHỎNG VÀ ĐỀ XUẤT MỨC GIẢM GIÁ")
+    print("=" * 70)
+
+    # Nếu không truyền ID thì dùng 3 sách mẫu cố định
+    # Chọn dựa trên kết quả thực tế của model:
+    # - 2 sách có recommend_change = True (improvement >= 5%)
+    # - 1 sách có recommend_change = False (improvement < 5%)
     if sample_ids is None:
-        bestsellers = df[df['is_bestseller'] == 1].sample(n=1, random_state=42)
-        non_bestsellers = df[df['is_bestseller'] == 0].sample(n=2, random_state=42)
-        sample_books = pd.concat([bestsellers, non_bestsellers])
-        sample_ids = sample_books['id'].tolist()
-    
+        sample_ids = [
+            279437167,  # Improvement: 7.4% (23% → 40%) - recommend_change=True
+            278777851,  # Improvement: 18.1% (39% → 20%) - recommend_change=True
+            278856619   # Improvement: 0.0% (giữ nguyên 20%) - recommend_change=False
+        ]
+
     results_summary = []
-    
+
     for idx, product_id in enumerate(sample_ids, 1):
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"SÁCH {idx}/{len(sample_ids)}")
-        
+
         result = simulate_optimal_discount(product_id, df, model, scaler, feature_cols)
-        
+
         if result:
             results_summary.append({
                 'product_id': product_id,
                 'name': result['book_info']['name'][:40],
                 'current_discount': result['book_info']['discount_rate'],
-                'optimal_discount': result['optimal_discount'],
-                'optimal_probability': result['optimal_probability'],
+                'recommended_discount': result['recommended_discount'],
+                'recommended_probability': result['recommended_probability'],
+                'improvement': result['improvement'],
+                'recommend_change': result['recommend_change'],
                 'is_bestseller': result['book_info']['is_bestseller']
             })
-    
-    # Tổng kết
-    print("\n" + "="*70)
+
+    # Tổng kết 3 sách
+    print("\n" + "=" * 70)
     print("TỔNG KẾT")
-    print("="*70)
-    
+    print("=" * 70)
+
     summary_df = pd.DataFrame(results_summary)
-    
+
     for idx, row in summary_df.iterrows():
-        print(f"\nSách {idx+1}: {row['name']}...")
+        print(f"\nSách {idx + 1}: {row['name']}...")
         print(f"  ID          : {row['product_id']}")
         print(f"  Bestseller  : {'Có' if row['is_bestseller'] == 1 else 'Không'}")
-        print(f"  Discount    : {row['current_discount']:.1f}% → {row['optimal_discount']:.0f}%")
-        print(f"  Xác suất    : {row['optimal_probability']:.1%}")
-    
-    print("\n" + "="*70 + "\n")
-    
+
+        if row['recommend_change']:
+            print(f"  Discount    : {row['current_discount']:.1f}% → {row['recommended_discount']:.0f}%")
+            print(f"  Xác suất    : {row['recommended_probability']:.1%}")
+            print(f"  Cải thiện   : {row['improvement']:+.1%}")
+        else:
+            print(f"  Discount    : Giữ nguyên {row['current_discount']:.1f}%")
+            print(f"  Xác suất    : {row['recommended_probability']:.1%}")
+
+    print("\n" + "=" * 70 + "\n")
+
     return summary_df
 
 
 if __name__ == "__main__":
-    import pickle
-    
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("ĐANG LOAD DỮ LIỆU VÀ MODEL")
-    print("="*70)
-    
+    print("=" * 70)
+
     try:
+        # Load dữ liệu
         print("\nĐang load dữ liệu...")
         df = pd.read_csv('data/clean/tiki_books_cleaned.csv', encoding='utf-8')
         print(f"✓ Đã load {len(df):,} sách")
-        
+
+        # Load model và scaler
         print("\nĐang load model...")
         model = pickle.load(open('models/bestseller_model.pkl', 'rb'))
         scaler = pickle.load(open('models/scaler.pkl', 'rb'))
         print("✓ Đã load Random Forest model & scaler")
-        
+
+        # Tạo biến giả cho danh mục sách
         print("\nĐang chuẩn bị features...")
-        category_dummies = pd.get_dummies(df['category_name'], prefix='cat')
+        category_dummies = pd.get_dummies(df['category_name'], prefix='cat', dtype=int)
         df = pd.concat([df, category_dummies], axis=1)
-        
+
+        # Features phải giống với lúc train model
         feature_cols = ['price', 'discount_rate', 'rating_average', 'has_rating']
         cat_cols = [col for col in df.columns if col.startswith('cat_')]
         feature_cols.extend(cat_cols)
+
         print(f"✓ Chuẩn bị xong {len(feature_cols)} features")
-        
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("SẴN SÀNG!")
-        print("="*70)
-        
+        print("=" * 70)
+
+        # Chạy demo 3 sách
         results = run_discount_optimization_demo(df, model, scaler, feature_cols)
-        
+
     except FileNotFoundError as e:
         print(f"\n❌ LỖI: Không tìm thấy file: {e}")
-        print("Vui lòng chạy: python scripts/ml/01_train_random_forest.py")
-        
+        print("Vui lòng kiểm tra lại đường dẫn dữ liệu, model và scaler.")
+
     except Exception as e:
         print(f"\n❌ LỖI: {e}")
